@@ -22,6 +22,7 @@ Author: Quantitative Portfolio Engineering Team
 
 import time
 import logging
+import datetime
 from typing import List, Dict, Any
 
 # Phase 1 Import (Data Ingestion)
@@ -133,7 +134,7 @@ def print_separator():
 
 def generate_mock_candles(scenario: str = "normal") -> List[Dict[str, Any]]:
     """Generates mock OHLC candle data for testing."""
-    # Ensure canonical function expects 'timestamp' field, so we add it.
+    # Ensure canonical function expects 'timestamp' field.
     base_ts = datetime.datetime.now(datetime.timezone.utc)
     
     base_price = 145.0
@@ -145,14 +146,10 @@ def generate_mock_candles(scenario: str = "normal") -> List[Dict[str, Any]]:
         price_range = 1.5
 
     candles = []
-    for i in range(20): # increased to 20 to satisfy period=14 requirement
+    for i in range(20): 
         ts = base_ts + datetime.timedelta(minutes=15*i)
-        high_mod = (i+1) * (price_range / 5) if i < 5 else 0.5 # keep variance simple
+        high_mod = (i+1) * (price_range / 5) if i < 5 else (0.5 if scenario != "high_vol" else 2.0 + (i%3))
         
-        # Scenario adjustments
-        if scenario == "high_vol":
-             high_mod = 2.0 + (i % 3)
-             
         candles.append({
             "timestamp": ts.isoformat(),
             "open": base_price + i,
@@ -186,8 +183,6 @@ def generate_mock_positions(scenario: str = "mixed") -> List[Dict[str, Any]]:
 # =============================================================================
 # MAIN SIMULATION - PHASE 2 SIGNAL VALIDATION
 # =============================================================================
-
-import datetime # Needed for mock timestamps
 
 def main():
     print("\n" + "=" * 60)
@@ -233,19 +228,21 @@ def main():
     
     if using_mock:
         dataset = generate_mock_candles("normal")
+        baseline_atr = 1.5
     else:
         dataset = real_candles
+        baseline_atr = 1.5 # Fixed baseline for demo purposes
 
-    # Compute ATR using Canonical Logic
-    # canonical compute_atr returns dict {'atr': val}
+    # Compute ATR
     atr_result = compute_atr(dataset)
     atr = atr_result.get("atr")
-    
-    # If None (insufficient data), default to 0.0
     if atr is None:
         atr = 0.0
         
-    vol_state = classify_volatility_state(atr)
+    # Compute Volatility State (Using New Signature)
+    # returns {'volatility_state': '...'}
+    vol_res = classify_volatility_state(atr, baseline_atr=baseline_atr, threshold_pct=10.0)
+    vol_state = vol_res.get("volatility_state", "UNKNOWN")
     
     # News is always mock since we removed news fetching from Phase 1
     sentiment = compute_news_sentiment(generate_mock_news("neutral")) 
@@ -256,12 +253,13 @@ def main():
     # Run High Volatility Mock Scenario to prove logic handles it
     print("\n>>> SCENARIO 2: [Mock] High Volatility Stress Test")
     
-    # Needs valid mock data with timestamps for canonical ATR to work
     stress_candles = generate_mock_candles("high_vol")
     atr_stress_res = compute_atr(stress_candles)
     atr_stress = atr_stress_res.get("atr", 0.0)
     
-    vol_stress = classify_volatility_state(atr_stress)
+    # Stress test baseline same as normal
+    vol_stress_res = classify_volatility_state(atr_stress, baseline_atr=1.5)
+    vol_stress = vol_stress_res.get("volatility_state", "UNKNOWN")
     
     print_phase2_signals("STRESS_TEST", atr_stress, vol_stress, 
                         {"score": -0.5, "bias": "NEGATIVE", "item_count": 5}, 
