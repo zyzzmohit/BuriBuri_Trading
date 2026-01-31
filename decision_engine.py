@@ -260,8 +260,11 @@ def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: 
             news_res = news_scorer.score_tech_news(headline_strs)
 
     # C. Confidence
-    conf_res = sector_confidence.compute_sector_confidence(vol_state, news_res["news_score"])
-    confidence_score = conf_res["sector_confidence"]
+    if market_context and "override_confidence" in market_context:
+        confidence_score = market_context["override_confidence"]
+    else:    
+        conf_res = sector_confidence.compute_sector_confidence(vol_state, news_res["news_score"])
+        confidence_score = conf_res["sector_confidence"]
 
     # ---------------------------------------------------------
     # 2. POSITIONS ANALYSIS (The Vitals Monitor)

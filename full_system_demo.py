@@ -22,6 +22,7 @@ import execution_planner
 import risk_guardrails
 import execution_summary
 import market_mode
+from backend.scenarios import get_scenario
 
 # =============================================================================
 # DATA SOURCE CONFIGURATION
@@ -257,7 +258,7 @@ def get_market_data():
 # API-COMPATIBLE OUTPUT FUNCTION (NO PRINTING)
 # =============================================================================
 
-def run_demo_scenario():
+def run_demo_scenario(scenario_id=None):
     """
     Returns full system output as JSON-safe dict.
     NO printing. NO side effects.
@@ -286,6 +287,45 @@ def run_demo_scenario():
     headlines = ["Tech sector sees steady demand growth"]
     
     market_context = {"candles": candles, "news": headlines}
+    atr_res = volatility_metrics.compute_atr(candles)
+    vol_res = volatility_metrics.classify_volatility_state(current_atr=2.0, baseline_atr=2.5)
+    vol_state = vol_res["volatility_state"]
+    
+    news_res = news_scorer.score_tech_news(headlines)
+    news_score_val = news_res["news_score"]
+    
+    conf_res = sector_confidence.compute_sector_confidence(vol_state, news_score_val)
+    confidence_val = conf_res["sector_confidence"]
+
+    # =========================================================
+    # SCENARIO INJECTION: OVERRIDE MOCK INPUTS
+    # =========================================================
+    scenario = get_scenario(scenario_id) if scenario_id else {}
+    overrides = scenario.get("override_inputs", {})
+    
+    if overrides:
+        if "positions" in overrides:
+            positions = overrides["positions"]
+        if "candidates" in overrides:
+            candidates = overrides["candidates"]
+        if "volatility_state" in overrides:
+            vol_state = overrides["volatility_state"]
+        if "news_score" in overrides:
+            news_score_val = overrides["news_score"]
+        if "sector_confidence" in overrides:
+            confidence_val = overrides["sector_confidence"]
+            
+    market_context = {
+        "candles": candles,
+        "news": headlines
+    }
+    
+    if "volatility_state" in overrides:
+        market_context["override_volatility"] = overrides["volatility_state"]
+    if "news_score" in overrides:
+        market_context["override_news_score"] = overrides["news_score"]
+    if "sector_confidence" in overrides:
+        market_context["override_confidence"] = overrides["sector_confidence"]
     
     # Run Decision Engine
     decision_report = decision_engine.run_decision_engine(
@@ -299,6 +339,55 @@ def run_demo_scenario():
     
     # Generate Output
     return decision_report # Return full report which now includes summary
+    # Extract components
+    posture = decision_report.get("market_posture", {})
+    safe_decisions = decision_report.get("decisions", [])
+    blocked_decisions = decision_report.get("blocked_by_safety", [])
+    concentration_risk = decision_report.get("concentration_risk", {})
+    
+    # Generate Execution Plan
+    if safe_decisions:
+        simulated_decision_input = {"decision": posture.get("market_posture", "NEUTRAL")}
+        plan_output = execution_planner.generate_execution_plan(simulated_decision_input, positions)
+    else:
+        plan_output = {"proposed_actions": []}
+    
+    # Generate Summary
+    summary_context = {
+        "primary_intent": posture.get("market_posture", "NEUTRAL"),
+        "proposed_actions": plan_output.get("proposed_actions", []),
+        "blocked_actions": blocked_decisions,
+        "mode": posture.get("risk_level", "MEDIUM")
+    }
+    summary = execution_summary.generate_execution_summary(summary_context)
+    
+    # Return JSON-safe structure for UI
+    return {
+        # Phase 2 Signals
+        "phase2": {
+            "volatility_state": vol_state,
+            "volatility_explanation": "Volatility contracting, risk subsiding",
+            "news_score": news_score_val,
+            "news_explanation": f"Processed {news_res['headline_count']} headlines",
+            "sector_confidence": confidence_val,
+            "confidence_explanation": "Combined signals indicate moderate confidence"
+        },
+        # Phase 3 Decisions
+        "market_posture": posture,
+        "decisions": safe_decisions,
+        "blocked_by_safety": blocked_decisions,
+        "concentration_risk": concentration_risk,
+        # Phase 4 Planning
+        "execution_plan": plan_output.get("proposed_actions", []),
+        "execution_summary": summary,
+        # Metadata
+        "input_stats": {
+            "positions": len(positions),
+            "candles": len(candles),
+            "headlines": len(headlines)
+        },
+        "scenario_meta": scenario
+    }
 
 
 # =============================================================================
