@@ -825,6 +825,228 @@ body {
     margin-top: var(--space-xxl);
 }
 
+/* =============================================================================
+   RUN METADATA (Timestamp & Run ID) - Trust Signal
+   ============================================================================= */
+
+.run-metadata {
+    margin-top: var(--space-md);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: 13px;
+    color: var(--text-secondary);
+    opacity: 1;
+    transition: opacity var(--transition-normal);
+}
+
+.run-metadata.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.run-timestamp {
+    color: var(--text-muted);
+}
+
+.run-separator {
+    color: var(--border-active);
+}
+
+.run-id {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--color-purple);
+}
+
+/* =============================================================================
+   THINKING PANEL - Agent Processing Animation
+   ============================================================================= */
+
+.thinking-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    max-width: 500px;
+    margin: var(--space-xxl) auto;
+    transition: opacity var(--transition-slow), transform var(--transition-slow);
+}
+
+.thinking-panel.fade-out {
+    opacity: 0;
+    transform: translateY(-20px);
+}
+
+.thinking-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--border-default);
+}
+
+.thinking-brain {
+    font-size: 32px;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(1.05);
+    }
+}
+
+.thinking-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.thinking-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.thinking-step {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    border: 1px solid transparent;
+    transition: all var(--transition-normal);
+    opacity: 0.4;
+}
+
+.thinking-step[data-state="active"] {
+    opacity: 1;
+    border-color: var(--color-blue);
+    background: var(--color-blue-bg);
+}
+
+.thinking-step[data-state="complete"] {
+    opacity: 1;
+    border-color: var(--color-green);
+    background: var(--color-green-bg);
+}
+
+.thinking-step-indicator {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.thinking-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-default);
+    border-top-color: var(--color-blue);
+    border-radius: 50%;
+    display: none;
+}
+
+.thinking-step[data-state="active"] .thinking-spinner {
+    display: block;
+    animation: spin 0.8s linear infinite;
+}
+
+.thinking-check {
+    display: none;
+    font-size: 16px;
+    color: var(--color-green);
+    font-weight: bold;
+}
+
+.thinking-step[data-state="complete"] .thinking-check {
+    display: block;
+}
+
+.thinking-step[data-state="complete"] .thinking-spinner {
+    display: none;
+}
+
+.thinking-step-content {
+    flex: 1;
+}
+
+.thinking-step-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.thinking-step-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.thinking-step[data-state="active"] .thinking-step-title {
+    color: var(--color-blue);
+}
+
+.thinking-step[data-state="complete"] .thinking-step-title {
+    color: var(--color-green);
+}
+
+/* =============================================================================
+   PHASE-BY-PHASE REVEAL - Steps start hidden, reveal on .revealed
+   ============================================================================= */
+
+.step {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.step.revealed {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Remove old animation - now controlled by JS */
+.step:nth-child(1),
+.step:nth-child(2),
+.step:nth-child(3),
+.step:nth-child(4),
+.step:nth-child(5) {
+    animation: none;
+}
+
+/* =============================================================================
+   BUTTON STATES
+   ============================================================================= */
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary:disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
 /* --- Responsive --- */
 @media (max-width: 700px) {
     .signal-grid {
@@ -841,5 +1063,14 @@ body {
 
     .header-title {
         font-size: 22px;
+    }
+
+    .thinking-panel {
+        margin: var(--space-lg);
+    }
+
+    .run-metadata {
+        flex-direction: column;
+        gap: var(--space-xs);
     }
 }

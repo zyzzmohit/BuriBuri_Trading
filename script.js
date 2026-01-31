@@ -3,7 +3,7 @@
  * Portfolio Intelligence System - AI Agent Visualization
  * 
  * Renders the complete AI decision pipeline step-by-step.
- * Now wired to Flask backend for real Python engine output.
+ * Features "thinking" animation and timestamp/run ID for trust.
  */
 
 // =============================================================================
@@ -11,40 +11,38 @@
 // =============================================================================
 
 const API_BASE_URL = "http://127.0.0.1:5000";
-let useLiveBackend = true; // Toggle for fallback mode
 
-// =============================================================================
-// SCENARIO DATA (Fallback Mock Data)
-// =============================================================================
-
-const scenarios = {
-    balanced: {
-        name: "Balanced Portfolio",
-        input: { positions: 3, candles: 20, headlines: 3 },
-        phase2: {
-            volatility: "CONTRACTING",
-            volatilityExplanation: "Market volatility decreasing, risk subsiding",
-            newsScore: 55,
-            newsExplanation: "Mixed sentiment: AI demand positive, rate fears neutral",
-            confidence: 65,
-            confidenceExplanation: "Moderate confidence supports measured action"
-        },
-        phase3: {
-            posture: "NEUTRAL",
-            risk: "MEDIUM",
-            reason: "Volatility stable with mixed confidence — no aggressive moves warranted",
-            decisions: [
-                { target: "NVDA", type: "POSITION", action: "MAINTAIN", reasons: ["Vitals Score: 84 (HEALTHY)", "Sector momentum positive"] },
-                { target: "SLOW_UTIL", type: "POSITION", action: "REVIEW", reasons: ["Stagnant performance (>20 days, <2% return)"] }
-            ]
-        },
-        phase4: {
-            allowed: [{ symbol: "NVDA", action: "MONITOR", reason: "Strong position" }],
-            blocked: [],
-            summary: { decision: "NEUTRAL", proposed: 2, blocked: 0, mode: "STANDARD" }
-        }
+// Thinking steps - displayed while agent processes
+const THINKING_STEPS = [
+    {
+        title: "Perceiving Market…",
+        subtitle: "Analyzing volatility, news, and sector signals",
+        duration: 600
+    },
+    {
+        title: "Evaluating Positions…",
+        subtitle: "Scoring efficiency and detecting dead capital",
+        duration: 600
+    },
+    {
+        title: "Synthesizing Decisions…",
+        subtitle: "Determining posture and optimal actions",
+        duration: 700
+    },
+    {
+        title: "Applying Safety Checks…",
+        subtitle: "Enforcing risk and capital guardrails",
+        duration: 500
     }
-};
+];
+
+// =============================================================================
+// STATE MANAGEMENT
+// =============================================================================
+
+let currentRunId = null;
+let currentTimestamp = null;
+let isProcessing = false;
 
 // =============================================================================
 // UTILITY FUNCTIONS
@@ -81,6 +79,37 @@ function safeValue(val, fallback = "N/A") {
     return val !== undefined && val !== null ? val : fallback;
 }
 
+/**
+ * Generate a short random hex string
+ */
+function generateHexId(length = 4) {
+    return [...Array(length)]
+        .map(() => Math.floor(Math.random() * 16).toString(16))
+        .join('');
+}
+
+/**
+ * Format timestamp for display (IST timezone)
+ */
+function formatTimestamp(date) {
+    const options = {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+    };
+    return date.toLocaleString('en-IN', options).replace(',', ' ·');
+}
+
+/**
+ * Sleep utility for async animations
+ */
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // =============================================================================
 // BACKEND API INTEGRATION
 // =============================================================================
@@ -102,7 +131,6 @@ async function fetchFromBackend() {
  * Transform backend response to UI-compatible format
  */
 function transformBackendData(data) {
-    // Extract from backend structure
     const inputStats = data.input_stats || {};
     const phase2 = data.phase2 || {};
     const posture = data.market_posture || {};
@@ -111,7 +139,7 @@ function transformBackendData(data) {
     const execPlan = data.execution_plan || [];
     const summary = data.execution_summary || {};
 
-    // Map decisions to UI format (handle backend "reason" vs UI "reasons")
+    // Map decisions to UI format
     const mappedDecisions = decisions.map(d => ({
         target: d.target,
         type: d.type,
@@ -167,12 +195,60 @@ function transformBackendData(data) {
 }
 
 // =============================================================================
-// RENDER FUNCTIONS
+// THINKING ANIMATION RENDERING
+// =============================================================================
+
+function renderThinkingPanel() {
+    return `
+        <div class="thinking-panel" id="thinking-panel">
+            <div class="thinking-header">
+                <div class="thinking-brain">🧠</div>
+                <div class="thinking-title">Agent Processing</div>
+            </div>
+            <div class="thinking-steps" id="thinking-steps">
+                ${THINKING_STEPS.map((step, i) => `
+                    <div class="thinking-step" id="thinking-step-${i}" data-state="pending">
+                        <div class="thinking-step-indicator">
+                            <div class="thinking-spinner"></div>
+                            <div class="thinking-check">✓</div>
+                        </div>
+                        <div class="thinking-step-content">
+                            <div class="thinking-step-title">${step.title}</div>
+                            <div class="thinking-step-subtitle">${step.subtitle}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+async function animateThinkingSteps() {
+    for (let i = 0; i < THINKING_STEPS.length; i++) {
+        const step = document.getElementById(`thinking-step-${i}`);
+        if (!step) continue;
+
+        // Activate current step
+        step.dataset.state = "active";
+
+        // Wait for step duration
+        await sleep(THINKING_STEPS[i].duration);
+
+        // Complete step
+        step.dataset.state = "complete";
+    }
+
+    // Final pause before revealing results
+    await sleep(300);
+}
+
+// =============================================================================
+// PIPELINE STEP RENDERING
 // =============================================================================
 
 function renderStep1(data) {
     return `
-        <div class="step">
+        <div class="step" id="pipeline-step-1">
             <div class="step-header">
                 <span class="step-number blue">1</span>
                 <span class="step-title">Input Data</span>
@@ -207,7 +283,7 @@ function renderStep2(data) {
     const confClass = getScoreClass(data.confidence);
 
     return `
-        <div class="step">
+        <div class="step" id="pipeline-step-2">
             <div class="step-header">
                 <span class="step-number yellow">2</span>
                 <span class="step-title">Market Perception</span>
@@ -270,7 +346,7 @@ function renderStep3(data) {
     }).join("");
 
     return `
-        <div class="step">
+        <div class="step" id="pipeline-step-3">
             <div class="step-header">
                 <span class="step-number purple">3</span>
                 <span class="step-title">Decision & Reasoning</span>
@@ -321,7 +397,7 @@ function renderStep4(data) {
     }
 
     return `
-        <div class="step">
+        <div class="step" id="pipeline-step-4">
             <div class="step-header">
                 <span class="step-number red">4</span>
                 <span class="step-title">Safety Gate</span>
@@ -353,7 +429,7 @@ function renderStep5(data) {
     const summary = data.summary || {};
 
     return `
-        <div class="step">
+        <div class="step" id="pipeline-step-5">
             <div class="step-header">
                 <span class="step-number green">5</span>
                 <span class="step-title">Execution Plan</span>
@@ -383,14 +459,14 @@ function renderStep5(data) {
     `;
 }
 
-function renderPipeline(scenario) {
+// =============================================================================
+// PHASE-BY-PHASE REVEAL ANIMATION
+// =============================================================================
+
+async function revealPipelineSteps(scenario) {
     const container = document.getElementById("pipeline");
-    const emptyState = document.getElementById("empty-state");
 
-    if (emptyState) {
-        emptyState.style.display = "none";
-    }
-
+    // Render all steps (hidden initially via CSS)
     const step1 = renderStep1(scenario.input || {});
     const step2 = renderStep2(scenario.phase2 || {});
     const step3 = renderStep3(scenario.phase3 || {});
@@ -398,23 +474,13 @@ function renderPipeline(scenario) {
     const step5 = renderStep5(scenario.phase4 || {});
 
     container.innerHTML = step1 + step2 + step3 + step4 + step5;
-}
 
-function showLoadingState() {
-    const container = document.getElementById("pipeline");
-    const emptyState = document.getElementById("empty-state");
-
-    if (emptyState) {
-        emptyState.style.display = "none";
+    // Reveal each step with delay
+    const steps = container.querySelectorAll('.step');
+    for (let i = 0; i < steps.length; i++) {
+        await sleep(200);
+        steps[i].classList.add('revealed');
     }
-
-    container.innerHTML = `
-        <div class="loading-state">
-            <div class="loading-spinner"></div>
-            <div class="loading-text">Running AI Agent Pipeline...</div>
-            <div class="loading-subtext">Executing Phase 2 → Phase 3 → Phase 4</div>
-        </div>
-    `;
 }
 
 function showErrorState(message) {
@@ -430,6 +496,28 @@ function showErrorState(message) {
 }
 
 // =============================================================================
+// TIMESTAMP & RUN ID MANAGEMENT
+// =============================================================================
+
+function updateRunMetadata(posture) {
+    currentTimestamp = new Date();
+    const hexPart = generateHexId(4);
+    const postureStr = (posture || "UNKNOWN").toUpperCase().replace(/\s+/g, "_");
+    currentRunId = `${hexPart}-${postureStr}`;
+
+    // Update DOM
+    const metadataContainer = document.getElementById("run-metadata");
+    const timestampEl = document.getElementById("run-timestamp");
+    const runIdEl = document.getElementById("run-id");
+
+    if (metadataContainer && timestampEl && runIdEl) {
+        timestampEl.textContent = `Last Analysis: ${formatTimestamp(currentTimestamp)}`;
+        runIdEl.textContent = `Run ID: ${currentRunId}`;
+        metadataContainer.classList.remove("hidden");
+    }
+}
+
+// =============================================================================
 // INTERACTIVITY
 // =============================================================================
 
@@ -442,41 +530,82 @@ function toggleDecision(index) {
 }
 
 // =============================================================================
-// MAIN RUN FUNCTION (FETCHES FROM BACKEND)
+// MAIN RUN FUNCTION (ORCHESTRATES EVERYTHING)
 // =============================================================================
 
 async function runAgent() {
-    showLoadingState();
+    // Prevent double-clicks
+    if (isProcessing) return;
+    isProcessing = true;
 
-    // Small delay for visual feedback
-    await new Promise(resolve => setTimeout(resolve, 300));
+    const runBtn = document.getElementById("run-btn");
+    const container = document.getElementById("pipeline");
+    const emptyState = document.getElementById("empty-state");
+    const dataSource = document.getElementById("data-source");
 
-    const backendData = await fetchFromBackend();
-
-    if (backendData && !backendData.error) {
-        // Transform backend data to UI format
-        const uiData = transformBackendData(backendData);
-        renderPipeline(uiData);
-
-        // Update source indicator
-        const sourceIndicator = document.getElementById("data-source");
-        if (sourceIndicator) {
-            sourceIndicator.textContent = "🔗 Live Python Backend";
-            sourceIndicator.className = "data-source live";
-        }
-    } else {
-        // Fallback to mock data
-        console.warn("Using mock data fallback");
-        showErrorState("Could not connect to Python backend. Is Flask running?");
+    // Disable button during processing
+    if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = "Processing...";
     }
 
-    // Scroll to first step
-    setTimeout(function () {
+    // Hide empty state
+    if (emptyState) {
+        emptyState.style.display = "none";
+    }
+
+    // Show thinking animation
+    container.innerHTML = renderThinkingPanel();
+
+    // Start backend fetch in parallel with animation
+    const backendPromise = fetchFromBackend();
+
+    // Run thinking animation
+    await animateThinkingSteps();
+
+    // Wait for backend response
+    const backendData = await backendPromise;
+
+    if (backendData && !backendData.error) {
+        // Transform data
+        const uiData = transformBackendData(backendData);
+
+        // Update Run ID with posture
+        updateRunMetadata(uiData.phase3.posture);
+
+        // Update data source indicator
+        if (dataSource) {
+            dataSource.textContent = "🔗 Live Python Backend";
+            dataSource.className = "data-source live";
+        }
+
+        // Fade out thinking panel
+        const thinkingPanel = document.getElementById("thinking-panel");
+        if (thinkingPanel) {
+            thinkingPanel.classList.add("fade-out");
+            await sleep(300);
+        }
+
+        // Reveal pipeline steps phase-by-phase
+        await revealPipelineSteps(uiData);
+
+        // Scroll to first step
         const firstStep = document.querySelector(".step");
         if (firstStep) {
             firstStep.scrollIntoView({ behavior: "smooth", block: "start" });
         }
-    }, 100);
+    } else {
+        // Show error
+        showErrorState("Could not connect to Python backend. Is Flask running?");
+    }
+
+    // Re-enable button
+    if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = "Run Full Analysis";
+    }
+
+    isProcessing = false;
 }
 
 // =============================================================================
@@ -485,7 +614,6 @@ async function runAgent() {
 
 document.addEventListener("DOMContentLoaded", function () {
     const runBtn = document.getElementById("run-btn");
-
     if (runBtn) {
         runBtn.addEventListener("click", runAgent);
     }
