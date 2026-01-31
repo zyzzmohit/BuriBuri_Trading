@@ -6,6 +6,7 @@ import decision_explainer
 import volatility_metrics
 import news_scorer
 import sector_confidence
+import risk_guardrails
 
 def determine_market_posture(
     volatility_state: str,
@@ -376,13 +377,38 @@ def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: 
     )
 
     # ---------------------------------------------------------
-    # 9. Final Report
+    # 9. RISK GUARDRAILS (Final Safety Gate)
+    # ---------------------------------------------------------
+    risk_context = {
+        "concentration": conc_warning,
+        "cash_available": float(portfolio_state.get("cash", 0.0)),
+        "minimum_reserve": 50000.0,
+        "volatility_state": vol_state
+    }
+    
+    guardrail_results = risk_guardrails.apply_risk_guardrails(
+        enriched_decisions,
+        risk_context
+    )
+    
+    safe_decisions = guardrail_results["allowed_actions"]
+    blocked_decisions = guardrail_results["blocked_actions"]
+    
+    guardrail_summary = ""
+    if blocked_decisions:
+        guardrail_summary = risk_guardrails.summarize_guardrail_results(guardrail_results)
+
+    # ---------------------------------------------------------
+    # 10. Final Report
     # ---------------------------------------------------------
     summary_parts = [lock_in_report["summary"]]
     summary_parts.append(f"POSTURE: {posture_report['market_posture']} (Conf: {posture_report['confidence']}).")
     
     if conc_warning["is_concentrated"]:
         summary_parts.append(f"ALERT: {conc_warning['dominant_sector']} sector over-concentrated.")
+    
+    if blocked_decisions:
+        summary_parts.append(f"SAFETY: {guardrail_summary}")
     
     final_summary = " ".join(summary_parts)
 
@@ -392,7 +418,8 @@ def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: 
         "reallocation_trigger": reallocation_pressure,
         "concentration_risk": conc_warning,
         "opportunity_scan": opportunity_report,
-        "decisions": enriched_decisions,
+        "decisions": safe_decisions,
+        "blocked_by_safety": blocked_decisions,
         "market_posture": posture_report
     }
 
