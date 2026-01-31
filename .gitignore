@@ -9,3 +9,8 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Environment (SECURITY - Never commit secrets)
+.env
+.env.local
+.env.*.local
