@@ -4,43 +4,123 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Portfolio Intelligence System | AI Agent Demo</title>
-  <meta name="description" content="Explainable AI Agent for Portfolio Decisions - Watch the agent think step-by-step.">
+  <title>BuriBuri Trading | Portfolio Intelligence</title>
+  <meta name="description" content="Explainable, Risk-Aware Portfolio Decision Engine">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-  <!-- HEADER -->
+  <!-- ========================================
+         HEADER
+         ======================================== -->
   <header class="header">
     <div class="header-content">
-      <h1 class="header-title">Portfolio Intelligence System</h1>
-      <p class="header-subtitle">Explainable AI Agent for Portfolio Decisions</p>
-      <div class="controls">
-        <span id="data-source" class="data-source">🔌 Ready to connect</span>
-        <button id="run-btn" class="btn-primary">Run Full Analysis</button>
+      <h1 class="logo">🐻 BuriBuri Trading</h1>
+      <p class="tagline">Explainable, Risk-Aware Portfolio Decisions</p>
+    </div>
+    <div class="header-actions">
+      <div class="scenario-controls">
+        <select id="scenario-selector" class="scenario-selector">
+          <option value="NORMAL">Normal Operation</option>
+          <option value="crash_reflex">🚨 The Crash Reflex</option>
+          <option value="concentration_guard">🛡️ The Concentration Guard</option>
+          <option value="disciplined_observer">👀 The Disciplined Observer</option>
+          <option value="dead_capital">♻️ The Dead Capital Rotator</option>
+          <option value="greedy_trap">🪤 The Greedy Trap</option>
+        </select>
       </div>
-      <!-- Timestamp & Run ID (Trust Signal) -->
-      <div id="run-metadata" class="run-metadata hidden">
-        <span id="run-timestamp" class="run-timestamp"></span>
-        <span class="run-separator">·</span>
-        <span id="run-id" class="run-id"></span>
-      </div>
+      <span class="status-badge" id="status-badge">Ready</span>
+      <button class="btn-run" id="run-btn">Run Analysis</button>
     </div>
   </header>
 
-  <!-- MAIN PIPELINE -->
-  <main class="pipeline-container" id="pipeline">
-    <!-- Steps will be injected by JavaScript -->
-    <div class="empty-state" id="empty-state">
-      <div class="empty-icon">🧠</div>
-      <p class="empty-text">Click <strong>Run Full Analysis</strong> to execute the Python AI engine.</p>
-      <p class="empty-hint">Ensure Flask backend is running: <code>python backend/app.py</code></p>
-    </div>
+  <!-- ========================================
+         MAIN CONTENT
+         ======================================== -->
+  <main class="main">
+    <!-- Market Overview Panel -->
+    <section class="panel" id="market-panel">
+      <h2 class="panel-title">Market Overview</h2>
+      <div id="scenario-badges" class="scenario-badges"></div>
+      <div class="metrics-grid">
+        <div class="metric-card" id="posture-card">
+          <span class="metric-label">Market Posture</span>
+          <span class="metric-value posture" id="market-posture">—</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Volatility</span>
+          <span class="metric-value" id="volatility-state">—</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">News Sentiment</span>
+          <span class="metric-value" id="news-score">—</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Sector Confidence</span>
+          <span class="metric-value" id="sector-confidence">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Portfolio Health Panel -->
+    <section class="panel" id="health-panel">
+      <h2 class="panel-title">Portfolio Health</h2>
+      <div class="health-grid">
+        <div class="health-item">
+          <span class="health-label">Positions</span>
+          <span class="health-value" id="position-count">—</span>
+        </div>
+        <div class="health-item">
+          <span class="health-label">Avg Vitals Score</span>
+          <span class="health-value" id="avg-vitals">—</span>
+        </div>
+        <div class="health-item">
+          <span class="health-label">Capital Lock-In</span>
+          <span class="health-value" id="capital-lockin">—</span>
+        </div>
+        <div class="health-item">
+          <span class="health-label">Concentration Risk</span>
+          <span class="health-value" id="concentration-risk">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Decision Feed (Core Focus) -->
+    <section class="panel panel-wide" id="decisions-panel">
+      <h2 class="panel-title">Advisory Decisions</h2>
+      <p class="panel-subtitle">Each decision includes human-readable explanations</p>
+
+      <div class="decision-feed" id="decision-feed">
+        <!-- Decisions will be injected here -->
+        <div class="empty-state" id="empty-decisions">
+          <p>Click <strong>Run Analysis</strong> to generate decisions</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Safety & Warnings Panel -->
+    <section class="panel" id="warnings-panel">
+      <h2 class="panel-title">Safety & Guardrails</h2>
+      <div class="warnings-list" id="warnings-list">
+        <div class="empty-state" id="empty-warnings">
+          <p>No active warnings</p>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <!-- FOOTER -->
+  <!-- ========================================
+         FOOTER
+         ======================================== -->
   <footer class="footer">
-    <p>Portfolio Intelligence System &copy; 2026 | Powered by Python Decision Engine</p>
+    <p class="disclaimer">
+      <strong>Advisory Only.</strong> No trades are executed.
+      This is a hackathon prototype for demonstration purposes.
+    </p>
+    <p class="copyright">© 2026 BuriBuri Trading Team</p>
   </footer>
 
   <script src="script.js"></script>
