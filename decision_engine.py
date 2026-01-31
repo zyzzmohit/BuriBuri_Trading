@@ -1,7 +1,9 @@
-import vitals_monitor
+import position_vitals as vitals_monitor
 import capital_lock_in
 import opportunity_scanner
+import opportunity_logic
 import concentration_guard
+import decision_explainer
 
 def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: dict, candidates: list) -> dict:
     """
@@ -59,7 +61,7 @@ def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: 
     # ---------------------------------------------------------
     # 4. OPPORTUNITY SCANNER (Relative Efficiency)
     # ---------------------------------------------------------
-    opportunity_report = opportunity_scanner.scan_for_opportunities(
+    opportunity_report = opportunity_logic.scan_for_opportunities(
         analyzed_positions, 
         candidates
     )
@@ -174,7 +176,45 @@ def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: 
         })
 
     # ---------------------------------------------------------
-    # 6. Final Report
+    # 6. EXPLANATION LAYER (Phase 2 → Human-Readable)
+    # ---------------------------------------------------------
+    # Collect signals for explainer (NO recomputation)
+    portfolio_signals = {
+        "dead_capital_symbols": dead_capital_symbols,
+        "hot_sectors": hot_sectors,
+        "reallocation_pressure": reallocation_pressure,
+        "pressure_score": lock_in_report["pressure_score"]
+    }
+    
+    risk_signals = {
+        "concentration_warning": conc_warning,
+        "better_opp_exists": better_opp_exists,
+        "opp_confidence": opp_confidence
+    }
+    
+    # Enrich decisions with structured explanations
+    # Note: We need to pass sector info to decisions for fuller context
+    for i, decision in enumerate(decisions):
+        if decision["type"] == "POSITION":
+            # Find matching position to get sector
+            matching_pos = next((p for p in analyzed_positions if p["symbol"] == decision["target"]), None)
+            if matching_pos:
+                decision["sector"] = matching_pos.get("sector", "UNKNOWN")
+                decision["flags"] = matching_pos.get("flags", [])
+        elif decision["type"] == "CANDIDATE":
+            # Find matching candidate
+            matching_cand = next((c for c in candidates if c["symbol"] == decision["target"]), None)
+            if matching_cand:
+                decision["sector"] = matching_cand.get("sector", "UNKNOWN")
+    
+    enriched_decisions = decision_explainer.enrich_decisions_with_explanations(
+        decisions,
+        portfolio_signals,
+        risk_signals
+    )
+
+    # ---------------------------------------------------------
+    # 7. Final Report
     # ---------------------------------------------------------
     summary_parts = [lock_in_report["summary"]]
     if conc_warning["is_concentrated"]:
@@ -193,7 +233,7 @@ def run_decision_engine(portfolio_state: dict, positions: list, sector_heatmap: 
         "reallocation_trigger": reallocation_pressure,
         "concentration_risk": conc_warning,
         "opportunity_scan": opportunity_report,
-        "decisions": decisions
+        "decisions": enriched_decisions
     }
 
 # ---------------------------------------------------------
@@ -259,11 +299,15 @@ def run_demo():
     conc = report_t1["concentration_risk"]
     print(f"Concentration: {conc['severity']} (Dom: {conc['dominant_sector']} @ {conc['exposure']:.0%})")
     
-    print("-" * 75)
-    print(f"{'TARGET':<12} | {'TYPE':<10} | {'ACTION':<18} | {'REASON'}")
-    print("-" * 75)
+    print("\n" + "=" * 80)
+    print("DECISIONS WITH EXPLANATIONS")
+    print("=" * 80)
     for d in report_t1["decisions"]:
-        print(f"{d['target']:<12} | {d['type']:<10} | {d['action']:<18} | {d['reason']}")
+        print(f"\n[{d['type']}] {d['target']} → {d['action']}")
+        print(f"  Reasons:")
+        reasons = d.get('reasons', [d.get('reason', 'No explanation')])
+        for i, reason in enumerate(reasons, 1):
+            print(f"    {i}. {reason}")
 
 if __name__ == "__main__":
     run_demo()
