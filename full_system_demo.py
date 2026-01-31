@@ -21,18 +21,54 @@ import decision_engine
 import execution_planner
 import risk_guardrails
 import execution_summary
+import market_mode
 
 # =============================================================================
 # DATA SOURCE CONFIGURATION
 # =============================================================================
 
-# DEMO MODE: Use pre-built demo profiles for showcasing (takes priority)
-DEMO_MODE = os.environ.get("DEMO_MODE", "true").lower() == "true"
+# 1. Detect Environment State
+AUTO_MODE, AUTO_CONTEXT = market_mode.determine_data_mode()
+
+# 2. Process User Overrides
+USER_DEMO_REQ = os.environ.get("DEMO_MODE")
+USER_ALPACA_REQ = os.environ.get("USE_ALPACA")
+
+if USER_DEMO_REQ is not None:
+    # Explicit User Request
+    DEMO_MODE = (USER_DEMO_REQ.lower() == "true")
+    if not DEMO_MODE:
+        if USER_ALPACA_REQ is not None:
+             USE_ALPACA = (USER_ALPACA_REQ.lower() == "true")
+        else:
+            # User said "No Demo", but didn't specify source. Fallback to Auto.
+            USE_ALPACA = (AUTO_MODE == "LIVE")
+    else:
+        USE_ALPACA = False
+else:
+    # No explicit user request.
+    # If we have Live capabilities, USE THEM. Otherwise default to the Judge-Ready Profiles.
+    if AUTO_MODE == "LIVE":
+        DEMO_MODE = False
+        USE_ALPACA = True
+    else:
+        DEMO_MODE = True # Default to profiles for best demo experience
+        USE_ALPACA = False
+
 DEMO_PROFILE = os.environ.get("DEMO_PROFILE", "OVERCONCENTRATED_TECH")
 DEMO_TREND = os.environ.get("DEMO_TREND", "NEUTRAL").upper()
 
-# ALPACA MODE: Use real paper trading data (when DEMO_MODE is False)
-USE_ALPACA = os.environ.get("USE_ALPACA", "false").lower() == "true"
+# Final Context Construction
+EXECUTION_CONTEXT = AUTO_CONTEXT.copy()
+if DEMO_MODE:
+    EXECUTION_CONTEXT["mode"] = "DEMO (Profiles)"
+    EXECUTION_CONTEXT["data_source"] = "Hardcoded Judge Profiles"
+elif USE_ALPACA:
+    EXECUTION_CONTEXT["mode"] = "LIVE (Paper)"
+    EXECUTION_CONTEXT["data_source"] = "Alpaca API + Polygon"
+else:
+    EXECUTION_CONTEXT["mode"] = "MOCK (Dev)"
+    EXECUTION_CONTEXT["data_source"] = "Synthetic Generator"
 
 
 # =============================================================================
@@ -42,35 +78,22 @@ USE_ALPACA = os.environ.get("USE_ALPACA", "false").lower() == "true"
 def print_run_configuration():
     """Print clear, honest capability disclosure at startup."""
     
-    # Determine actual data source
-    if DEMO_MODE:
-        mode_name = "DEMO"
-        portfolio_source = "HARD-CODED"
-        market_data = "SIMULATED"
-    elif USE_ALPACA:
-        mode_name = "ALPACA"
-        portfolio_source = "ALPACA PAPER API"
-        market_data = "REAL (with fallback)"
-    else:
-        mode_name = "MOCK"
-        portfolio_source = "MOCK DATA"
-        market_data = "SIMULATED"
-    
-    trend_info = DEMO_TREND if DEMO_MODE and DEMO_TREND != "NEUTRAL" else "NONE"
-    
     print()
     print("╔" + "═" * 58 + "╗")
     print("║" + "RUN CONFIGURATION".center(58) + "║")
     print("╠" + "═" * 58 + "╣")
-    print(f"║  Mode              : {mode_name:<35}║")
+    print(f"║  System Mode       : {EXECUTION_CONTEXT['mode']:<35}║")
+    print(f"║  Market Status     : {EXECUTION_CONTEXT['market_status']:<35}║")
     if DEMO_MODE:
-        print(f"║  Profile           : {DEMO_PROFILE:<35}║")
-    print(f"║  Portfolio Source  : {portfolio_source:<35}║")
-    print(f"║  Market Data       : {market_data:<35}║")
-    print(f"║  Trend Overlay     : {trend_info:<35}║")
-    print(f"║  Execution         : {'DISABLED':<35}║")
-    print(f"║  Safety Guards     : {'ENABLED':<35}║")
+        print(f"║  Active Profile    : {DEMO_PROFILE:<35}║")
+    print(f"║  Data Source       : {EXECUTION_CONTEXT['data_source']:<35}║")
+    print(f"║  Trend Overlay     : {DEMO_TREND if DEMO_MODE and DEMO_TREND != 'NEUTRAL' else 'NONE':<35}║")
+    print(f"║  Execution         : {'DISABLED (Advisory Only)':<35}║")
     print("╚" + "═" * 58 + "╝")
+    
+    if EXECUTION_CONTEXT['market_status'] != "OPEN" and not DEMO_MODE:
+        print(f"\n⚠️  MARKET IS CLOSED ({EXECUTION_CONTEXT['reason']}).")
+        print("   System using synthetic data to validate logic invariant.")
     print()
 
 
@@ -122,8 +145,15 @@ if DEMO_MODE:
 
 if not DEMO_MODE:
     if USE_ALPACA:
-        from broker.alpaca_adapter import AlpacaAdapter
-        _adapter = AlpacaAdapter()
+        try:
+            from broker.alpaca_adapter import AlpacaAdapter
+            _adapter = AlpacaAdapter()
+        except Exception as e:
+            print(f"❌ Alpaca Connection Failed: {e}")
+            print("   Falling back to Mock Adapter.")
+            from broker.mock_adapter import MockAdapter
+            _adapter = MockAdapter()
+            EXECUTION_CONTEXT["mode"] = "MOCK (Fallback)"
     else:
         from broker.mock_adapter import MockAdapter
         _adapter = MockAdapter()
@@ -185,6 +215,7 @@ def get_market_data():
     candles = _adapter.get_recent_candles("SPY", 20)
     
     if not candles:
+        # Fallback candles ensure system never crashes on empty data
         candles = [
             {"timestamp": f"2026-01-31T10:{i:02d}:00Z", "high": 100+i, "low": 98+i, "close": 99+i}
             for i in range(20)
@@ -209,10 +240,8 @@ def run_demo_scenario():
     """
     Returns full system output as JSON-safe dict.
     NO printing. NO side effects.
-    
-    This is the function called by the Flask API.
     """
-    # Mock Data (Same as demo)
+    # Mock Data (Same as demo) - Keep consistent with demo scenario
     portfolio = {
         "total_capital": 1_000_000.0,
         "cash": 150_000.0,
@@ -220,71 +249,22 @@ def run_demo_scenario():
     }
     
     positions = [
-        {
-            "symbol": "NVDA", 
-            "sector": "TECH",
-            "entry_price": 400.0, 
-            "current_price": 480.0, 
-            "atr": 12.0, 
-            "days_held": 12, 
-            "capital_allocated": 300_000.0
-        },
-        {
-            "symbol": "SLOW_UTIL", 
-            "sector": "UTILITIES", 
-            "entry_price": 50.0, 
-            "current_price": 51.0, 
-            "atr": 1.0, 
-            "days_held": 42, 
-            "capital_allocated": 200_000.0
-        },
-        {
-            "symbol": "SPEC_TECH", 
-            "sector": "TECH", 
-            "entry_price": 120.0, 
-            "current_price": 95.0, 
-            "atr": 5.0, 
-            "days_held": 8, 
-            "capital_allocated": 180_000.0
-        }
+        {"symbol": "NVDA", "sector": "TECH", "entry_price": 400.0, "current_price": 480.0, "atr": 12.0, "days_held": 12, "capital_allocated": 300_000.0},
+        {"symbol": "SLOW_UTIL", "sector": "UTILITIES", "entry_price": 50.0, "current_price": 51.0, "atr": 1.0, "days_held": 42, "capital_allocated": 200_000.0},
+        {"symbol": "SPEC_TECH", "sector": "TECH", "entry_price": 120.0, "current_price": 95.0, "atr": 5.0, "days_held": 8, "capital_allocated": 180_000.0}
     ]
     
-    sector_heatmap = {
-        "TECH": 80,
-        "UTILITIES": 40,
-        "BIOTECH": 70
-    }
-    
+    sector_heatmap = {"TECH": 80, "UTILITIES": 40, "BIOTECH": 70}
     candidates = [
         {"symbol": "NEW_BIO", "sector": "BIOTECH", "projected_efficiency": 72.0},
         {"symbol": "MORE_TECH", "sector": "TECH", "projected_efficiency": 68.0}
     ]
     
-    # Compute Phase 2 Signals
-    candles = [
-        {"timestamp": f"2026-01-31T10:{i:02d}:00Z", "high": 100+i, "low": 98+i, "close": 99+i}
-        for i in range(20)
-    ]
-    headlines = [
-        "Tech sector sees steady demand growth",
-        "AI stocks remain resilient despite volatility",
-        "Investors cautious ahead of inflation data"
-    ]
+    # Compute Signals
+    candles = [{"timestamp": f"2026-01-31T10:{i:02d}:00Z", "high": 100+i, "low": 98+i, "close": 99+i} for i in range(20)]
+    headlines = ["Tech sector sees steady demand growth"]
     
-    atr_res = volatility_metrics.compute_atr(candles)
-    vol_res = volatility_metrics.classify_volatility_state(current_atr=2.0, baseline_atr=2.5)
-    vol_state = vol_res["volatility_state"]
-    
-    news_res = news_scorer.score_tech_news(headlines)
-    news_score_val = news_res["news_score"]
-    
-    conf_res = sector_confidence.compute_sector_confidence(vol_state, news_score_val)
-    confidence_val = conf_res["sector_confidence"]
-    
-    market_context = {
-        "candles": candles,
-        "news": headlines
-    }
+    market_context = {"candles": candles, "news": headlines}
     
     # Run Decision Engine
     decision_report = decision_engine.run_decision_engine(
@@ -292,57 +272,12 @@ def run_demo_scenario():
         positions=positions,
         sector_heatmap=sector_heatmap,
         candidates=candidates,
-        market_context=market_context
+        market_context=market_context,
+        execution_context=EXECUTION_CONTEXT # Pass context
     )
     
-    # Extract components
-    posture = decision_report.get("market_posture", {})
-    safe_decisions = decision_report.get("decisions", [])
-    blocked_decisions = decision_report.get("blocked_by_safety", [])
-    concentration_risk = decision_report.get("concentration_risk", {})
-    
-    # Generate Execution Plan
-    if safe_decisions:
-        simulated_decision_input = {"decision": posture.get("market_posture", "NEUTRAL")}
-        plan_output = execution_planner.generate_execution_plan(simulated_decision_input, positions)
-    else:
-        plan_output = {"proposed_actions": []}
-    
-    # Generate Summary
-    summary_context = {
-        "primary_intent": posture.get("market_posture", "NEUTRAL"),
-        "proposed_actions": plan_output.get("proposed_actions", []),
-        "blocked_actions": blocked_decisions,
-        "mode": posture.get("risk_level", "MEDIUM")
-    }
-    summary = execution_summary.generate_execution_summary(summary_context)
-    
-    # Return JSON-safe structure for UI
-    return {
-        # Phase 2 Signals
-        "phase2": {
-            "volatility_state": vol_state,
-            "volatility_explanation": "Volatility contracting, risk subsiding",
-            "news_score": news_score_val,
-            "news_explanation": f"Processed {news_res['headline_count']} headlines",
-            "sector_confidence": confidence_val,
-            "confidence_explanation": "Combined signals indicate moderate confidence"
-        },
-        # Phase 3 Decisions
-        "market_posture": posture,
-        "decisions": safe_decisions,
-        "blocked_by_safety": blocked_decisions,
-        "concentration_risk": concentration_risk,
-        # Phase 4 Planning
-        "execution_plan": plan_output.get("proposed_actions", []),
-        "execution_summary": summary,
-        # Metadata
-        "input_stats": {
-            "positions": len(positions),
-            "candles": len(candles),
-            "headlines": len(headlines)
-        }
-    }
+    # Generate Output
+    return decision_report # Return full report which now includes summary
 
 
 # =============================================================================
@@ -456,14 +391,18 @@ def run_full_system_demo():
         positions=positions,
         sector_heatmap=heatmap,
         candidates=candidates,
-        market_context=market_context
+        market_context=market_context,
+        execution_context=EXECUTION_CONTEXT
     )
     
     posture = decision_report["market_posture"]
+    pm_summary = decision_report.get("pm_summary", "Summary unavailable.")
+    
     print(f"\n🎮 [Strategy]")
     print(f"   Market Posture: {posture['market_posture']} (Risk: {posture['risk_level']})")
-    for reason in posture.get('reasons', []):
-        print(f"   → {reason}")
+    
+    print(f"\n📝 [Portfolio Manager Summary]")
+    print(f"   \"{pm_summary}\"")
 
     # ---------------------------------------------------------
     # DECISIONS & EXPLANATIONS
@@ -474,23 +413,34 @@ def run_full_system_demo():
     
     safe_decisions = decision_report.get("decisions", [])
     blocked_decisions = decision_report.get("blocked_by_safety", [])
+    superiority = decision_report.get("superiority_analysis", {})
     
+    # Display Primary Decision
+    primary = superiority.get("primary_decision")
+    print("\n🏆 [PRIMARY DECISION]")
+    if primary:
+        print(f"   ACTION: {primary['action']} used on {primary['target']}")
+        print(f"   CONFIDENCE: {superiority.get('decision_confidence', 0.0):.0%}")
+        print(f"   RATIONALE:")
+        for r in primary.get("reasons", []):
+            print(f"    - {r}")
+    else:
+        print("   No primary action required (Portfolio Optimized).")
+
+    # Display Alternatives
+    print("\n⚖️  [ALTERNATIVES CONSIDERED]")
+    alternatives = superiority.get("alternatives_considered", [])
+    if alternatives:
+        for alt in alternatives:
+            print(f"   • {alt['target']:<8} ({alt['type']}): {alt['reason']}")
+            print(f"     (Score: {alt['score']})")
+    else:
+        print("   No significant alternatives considered.")
+
     if safe_decisions:
-        print("\n✅ [Approved Actions]")
+        print("\n✅ [All Approved Actions]")
         for d in safe_decisions:
-            action_color = "🟢" if d['action'] in ["MAINTAIN", "HOLD", "ALLOCATE"] else "🟡"
-            if d['action'] in ["REDUCE", "TRIM_RISK", "FREE_CAPITAL"]:
-                action_color = "🔴"
-            
-            print(f"\n   {action_color} {d['type']:<10} | {d['target']:<8} → {d['action']}")
-            print(f"      Score: {d.get('score', 'N/A')}")
-            
-            reasons = d.get('reasons', [d.get('reason', 'No explanation')])
-            if isinstance(reasons, list):
-                for i, r in enumerate(reasons[:3], 1):
-                    print(f"      {i}. {r}")
-            else:
-                print(f"      → {reasons}")
+            print(f"   • {d['target']:<8} → {d['action']:<15} (Score: {d['score']})")
 
     # ---------------------------------------------------------
     # SAFETY & GUARDRAILS
@@ -524,7 +474,6 @@ def run_full_system_demo():
             print(f"   {i}. {step['symbol']}: {step['action']}")
             print(f"      → {step['reason']}")
     else:
-        plan_output = {"proposed_actions": []}
         print("\n   No actions to plan.")
 
     # ---------------------------------------------------------
@@ -534,34 +483,16 @@ def run_full_system_demo():
     print("📊 EXECUTIVE SUMMARY")
     print("=" * 70)
     
-    summary_context = {
-        "primary_intent": posture["market_posture"],
-        "proposed_actions": plan_output.get("proposed_actions", []),
-        "blocked_actions": blocked_decisions,
-        "mode": posture["risk_level"]
-    }
+    print(f"\n   STATUS:    {EXECUTION_CONTEXT['mode']}")
+    print(f"   DECISION:  {posture['market_posture']}")
+    print(f"   SUMMARY:   {pm_summary}")
     
-    summary = execution_summary.generate_execution_summary(summary_context)
-    
-    print(f"""
-   Decision:          {summary['decision']}
-   Risk Level:        {summary['final_mode']}
-   Actions Approved:  {summary['actions_proposed']}
-   Actions Blocked:   {summary['actions_blocked']}
-    """)
-    
-    # Concentration warning
     conc_risk = decision_report.get("concentration_risk", {})
     if conc_risk.get("is_concentrated"):
-        print(f"   ⚠️  CONCENTRATION ALERT: {conc_risk['dominant_sector']} @ {conc_risk['exposure']:.0%}")
+        print(f"\n   ⚠️  CONCENTRATION ALERT: {conc_risk['dominant_sector']} @ {conc_risk['exposure']:.0%}")
     
     print("=" * 70)
-    
-    # Available options
-    print("\n💡 Available Options:")
-    print("   Profiles: " + ", ".join(get_available_profiles() if DEMO_MODE else ["N/A"]))
-    print("   Trends:   " + ", ".join(get_available_overlays() if DEMO_MODE else ["N/A"]))
-    print("\n   Example: DEMO_PROFILE=LOSING_PORTFOLIO DEMO_TREND=VOLATILITY_SHOCK python3 full_system_demo.py")
+    print("\n")
 
 
 if __name__ == "__main__":
